@@ -31,56 +31,59 @@ d'obscursissement du point d'entree (OPE), tant que le delais d'execution
 n'empiete pas sur le virus ou l'hote. Un exemple commun pour cette technique
 est de modifier la liste du destructeur. Dans la premiere parution de tmp.out [0]
 s01den et sblip ont publies leur virus Linux.Eng3ls, qui utilise cette
-technique d'OPE. Le virus utilise bon nombre d'autres technique et je recommande
+technique d'OPE. Le virus utilise bon nombre d'autres techniques et je recommande
 fortement d'y jetter un oeil, mais aussi aux notes de s01den sur les techniques
-d'OPE dans tmp.out #2 [1]. Les specifications de l'IBA du C++ exposent une autre
+d'OPE dans tmp.out #2 [1]. Les specifications de l'IBA de C++ exposent une autre
 cible de detournement d'execution, et moins connue : __cxa_finalize(). Dans ce 
-txt je vais decrire l'utilite de __cxa_finalize(), pointer comment elle
+txt je vais decrire l'utilite de __cxa_finalize(), montrer comment elle
 interagit avec le processus de destruction d'un ELF, et presenter deux methodes
 pour la detourner.
 
-Two pieces of my code supplement this txt:
-  ▪ A virus Linux.ElizaCanFix, which implements Method 0.
-  ▪ An infector [2] written in C, which implements both hijacking methods.
+J'ajoute a ce txt deux annexes :
+  * Linux.ElizaCanFix, un virus qui implemente la Methode 0.
+  * Un infecteur [2] en C, qui implemente les deux methodes de detournement.
 
-Both programs use Silvio Cesare's text segment padding infection [3], but any
-other infection method can be used. Detailing the infection method is out of
-the scope of this txt.
- ╓                           ╖
-═╣ What is __cxa_finalize()? ╠═════════════════════════════════════════════════
- ╙                           ╜
-The purpose of __cxa_finalize() function is to run C++ object destructors. It's
-defined as a part of the the Itanium C++ ABI specification [4], more precisely
-the Dynamic Shared Object (DSO) destruction at runtime. According to the spec,
-the DSO object destruction API consists of two components:
+Les deux programmes utilisent la technique d'infection du bourrage du segment 
+text de Silvio Cesare [3], mais toute autre technique fonctionnerait.
+L'explication detaillee du fonctionnement de cette technique ne fait pas partie
+de l'objectif de ce txt.
 
-▪ __cxa_atexit()
+ ╓                                  ╖
+═╣ Qu'est-ce que __cxa_finalize() ? ╠══════════════════════════════════════════
+ ╙                                  ╜
+
+Le principe de cette fonction est d'apeller le destructeur d'un object en C++.
+Ce comportement est defini dans les specifications de l'IBA Itanium de C++ [4],
+plus precisement la destruction a l'execuction d'un Objet Partage Dynamique
+(OPD). D'apres les specifications, l'API de destruction consiste en deux parties :
+
+* __cxa_atexit()
 
 ┌─┤ glibc ├─────────────────────────────────────────┤ stdlib/cxa_atexit.c ├───┐
 │                                                                             │
 │ int __cxa_atexit (void (*func) (void *), void *arg, void *d)                │
 └─────────────────────────────────────────────────────────────────────────────┘
-  __cxa_atexit() registers a destructor routine func with an argument arg for a
-  DSO handle d. A DSO handle is an address in one of the DSO's segments. It can
-  be any address as long as it is unique per-DSO. The linker exposes this
-  handle via a hidden symbol __dso_handle.
+  __cxa_atexit() enregistre une routine de destruction func avec un argument arg 
+  pour un pointeur vers un objet d. Ce pointeur pointe vers une adresse d'un des 
+  segments de l'OPD. Peu importe l'adresse du moment qu'elle est unique pour 
+  l'OPD. Le linker expose ce pointeur via le symbole cache __dso_handle.
 
-▪ __cxa_finalize()
+* __cxa_finalize()
 
 ┌─┤ glibc ├───────────────────────────────────────┤ stdlib/cxa_finalize.c ├───┐
 │                                                                             │
 │ void __cxa_finalize (void *d)                                               │
 └─────────────────────────────────────────────────────────────────────────────┘
-  __cxa_finalize() calls all destructors for the DSO represented by the handle
-  d in a manner that conforms to the C++ standard (i.e. destructors are called
-  in the order opposite to their registration).
+  __cxa_finalize() appelle tous les destructeurs pour l'OPD pointe par d, de 
+  maniere a se conformer au standart C++ (i.e. les destructeurs sont apelles
+  dans l'ordre inverse de leur enregistrement).
 
-Despite it appearing in a C++ specification, this mechanism is expected to be
-implemented for code written in C as well, since C-only Dynamic Shared Objects
-still have to interact with C++ programs in a spec-conforming manner. The spec
-also notes that these functions are not be exposed to the programmer directly.
-In GNU libc atexit(3) is simply a wrapper around __cxa_atexit(), although the
-only argument exposed to the caller is the function pointer to the destructor.
+Malgre sa presence dans les specifications C++, il est aussi attendu de
+l'implementer en C, puisque les OPD en C doivent tout de meme interagir avec
+les programmes en C++, en suivant les specifications. Il est aussi note que 
+ces fonctions ne sont pas exposees directement au programmateur. Dans la libc 
+de GNU, atexit(3) est un wrapper pour __cxa_atexit(), bien que le seul
+argument expose est un pointeur vers la fonction de destruction.
 
 Itanium ABI is a widely accepted specification and one is likely to find this
 mechanism in dynamically linked binaries compiled with common frameworks such
