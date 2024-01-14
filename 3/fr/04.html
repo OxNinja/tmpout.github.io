@@ -85,15 +85,16 @@ ces fonctions ne sont pas exposees directement au programmateur. Dans la libc
 de GNU, atexit(3) est un wrapper pour __cxa_atexit(), bien que le seul
 argument expose est un pointeur vers la fonction de destruction.
 
-Itanium ABI is a widely accepted specification and one is likely to find this
-mechanism in dynamically linked binaries compiled with common frameworks such
-as gcc and clang. GNU libc, for example, implemented it in the late 90's.
-Throughout this txt I will be using glibc as the reference libc implementation.
- ╓                      ╖
-═╣ Beginning of the end ╠══════════════════════════════════════════════════════
- ╙                      ╜
-The return value of the main() function is passed to exit(), which in turn is
-a wrapper around __run_exit_handlers():
+L'IBA Itanium est une specification largement reconnue, il est fort probable
+de la trouver dans des binaires dynamiques compiles par des frameworks comme
+gcc ou clang. La libc GNU par exemple, l'a implemente fin des annees 90.
+Pendant tout ce txt j'utiliserai la glibc comme reference d'implementation.
+
+ ╓                    ╖
+═╣ Le debut de la fin ╠════════════════════════════════════════════════════════
+ ╙                    ╜
+La valeur de retour de la fonction main() est passee a exit(), qui est en fait
+un wrapper autour de __run_exit_handlers():
 
 ┌─┤ glibc ├──────────────────────┤ sysdeps/generic/libc_start_call_main.h ├───┐
 │                                                                             │
@@ -133,23 +134,24 @@ a wrapper around __run_exit_handlers():
 │         break;                                                              │
 │ ...                                                                         │
 └─────────────────────────────────────────────────────────────────────────────┘
-A function registered with __cxa_atexit() is added to the __exit_funcs list of
-destructors (struct exit_function_list). In the above code excerpt you can see
-that it is the same list that is passed to __run_exit_handlers() in exit().
-__run_exit_handlers() will cycle through the list, executing destructors
-according to their flavor. The flavor is used to distinguish how the destructor
-must be executed, specifically the destructor's prototype and in some cases
-additional cleanup code. Functions registered with __cxa_atexit() have the
-ef_cxa flavor and in the above snippet you can see how that case is handled.
+Une fonction enregistree avec __cxa_atexit() est ajoutee a la liste des
+destructeurs __exit_funcs (struct exit_function_list). Dans l'extrait de code
+ci-dessus, on peut voir que la meme liste est passee a __run_exit_handlers()
+dans exit(). __run_exit_handlers() va parcourir la liste et executer les
+differents destructeurs selon leur preference (flavor). Cette preference permet
+de differencier comment un destructeur doit etre execute, specifiquement son
+prototype et dans certains cas meme, du code additionel de nettoyage. Les
+fonctions enregistrees avec __cxa_atexit() ont la preference ef_cxa, et on
+peut voir comment ce cas est gere dans le bout de code au dessus.
 
-So wait... if those destructors are called in __run_exit_handlers(), when does
-__cxa_finalize() get called?!
+Mais donc... si ces destructeurs sont apelles dans __run_exit_handlers(), quand
+est-ce que __cxa_finalize() est apellee ?
 
-The System V ABI [5] states that at entry point the rdx register is reserved
-for a function pointer to be registered with atexit by the program. In the case
-of a dynamically linked executable, that function is expected to be the program
-interpreter's destructor. Indeed we can see its registration in libc's init
-code:
+L'IBA de System V [5] dit qu'au point d'entree le registre rdx est reserve pour
+l'enregistrement d'un pointeur de fonction avec atexit par le programme. Dans
+le cas d'un executable dynamique, il est attendu de cette fonction qu'elle soit
+le destructeur de l'interprete du programme. En effet, on peut voir son
+enregistrement dans le code d'initialisation de la libc :
 
 ┌─┤ glibc ├────────────────────────────────────────────┤ csu/libc-start.c ├───┐
 │                                                                             │
@@ -157,8 +159,8 @@ code:
 │   if (__glibc_likely (rtld_fini != NULL))                                   │
 │       __cxa_atexit ((void (*) (void *)) rtld_fini, NULL, NULL);             │
 └─────────────────────────────────────────────────────────────────────────────┘
-In glibc's dynamic linker, the destructor is _dl_fini() - here it is passed to
-to the loaded binary:
+Dans le linker dynamique de la glibc, le destructeur est _dl_fini(), le voici
+passe au binaire :
 
 ┌─┤ glibc ├─────────────────────────────────┤ sysdeps/x86_64/dl-machine.h ├───┐
 │                                                                             │
@@ -170,12 +172,12 @@ to the loaded binary:
 │ {                                                                           │
 │   /* Lots of fun ahead.  ...                                                │
 └─────────────────────────────────────────────────────────────────────────────┘
-To keep it short (trust me you don't want to know what a libc developer thinks
-is fun) I will note that linker's destructor has many responsibilities, one of
-which is to call destructors in the fini_array if that mechanism is used (which
-is true for most modern ELFs). The first entry in this array is normally a
-pointer to destructor code inserted by the compiler. Here are some examples of
-such code:
+Pour faire simple (croyez-moi, vous ne voulez pas savoir ce qu'un dev de la
+libc trouve drole) je dirais que le destructeur du linker a beaucoup de
+responsabilites, nottament celle d'apeller les destructeurs dans fini_array si
+cette mecanique est utilisee (ce qui est le cas pour la majorite des ELFs
+modernes). La premiere entree dans cette liste est normalement un pointeur vers
+du code insere par le compilateur. En voici quelques exemples :
 
 ┌─┤ gcc ├─────────────────────────────────────────────┤ libgcc/crtstuff.c ├───┐
 │                                                                             │
@@ -195,12 +197,13 @@ such code:
 │       __cxa_finalize (__dso_handle);                                        │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
-We have arrived! If __cxa_finalize() function is provided, it will be executed
-by compiler's destructor code. It's at this point that we are most likely to
-hijack this function.
- ╓                      ╖
-═╣ Payload Requirements ╠══════════════════════════════════════════════════════
- ╙                      ╜
+Nous y voila ! Si la fonction __cxa_finalize() est implementee, elle sera executee
+par le code de destruction du compilateur. C'est a ce moment-la que nous pourrions
+detourner cette fonction.
+
+ ╓                              ╖
+═╣ Prerequis de la charge utile ╠══════════════════════════════════════════════
+ ╙                              ╜
 This technique mandates a common-sense payload requirement - all non-volatile
 registers must be preserved. The payload will hand the execution back to the
 host and if we clobber a used non-volatile register (for example the sole
